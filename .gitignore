@@ -1,0 +1,43 @@
+﻿# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Build and distribution
+dist/
+build/
+*.egg-info/
+
+# Local storage and uploaded documents
+storage/
+
+# Generated evaluation and test artifacts
+evaluation_results/
+test_data/
+
+# Logs and temporary files
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Local databases and backups
+*.sqlite
+*.sqlite3
+*.db
+*.bak
+
+# Local debugging and inspection scripts
+debug_*.py
+inspect_*.py
