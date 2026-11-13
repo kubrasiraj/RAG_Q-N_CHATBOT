@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     groq_max_completion_tokens: int = 800
     groq_temperature: float = 0.1
 
+        # Supabase Storage
+    supabase_url: str | None = None
+    supabase_secret_key: SecretStr | None = None
+    supabase_storage_bucket: str = "nova-documents"
+
 
 
 

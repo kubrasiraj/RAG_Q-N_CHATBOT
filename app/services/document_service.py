@@ -1,18 +1,29 @@
 
+import logging
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.document import Document
 from app.models.user import User
-from app.services.file_storage import delete_document, save_document
+from app.services.supabase_storage import (
+    SupabaseStorageError,
+    delete_document as delete_storage_document,
+    upload_document as upload_storage_document,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 MIME_TYPES = {
     ".pdf": "application/pdf",
-    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".docx": (
+        "application/vnd.openxmlformats-officedocument."
+        "wordprocessingml.document"
+    ),
     ".txt": "text/plain",
 }
 
@@ -28,26 +39,37 @@ def create_document(
     content: bytes,
 ) -> Document:
     """
-    Save the uploaded file and create its database record.
+    Upload the document to Supabase and create its database record.
 
-    If the database transaction fails, remove the saved file.
+    If the database transaction fails, attempt to remove the uploaded object.
     """
 
-    extension = Path(original_filename).suffix.lower()
+    safe_filename = Path(original_filename).name
+    extension = Path(safe_filename).suffix.lower()
     mime_type = MIME_TYPES.get(extension)
 
     if mime_type is None:
         raise ValueError("Unsupported document extension.")
 
-    storage_path = save_document(
+    if not content:
+        raise ValueError("Document content cannot be empty.")
+
+    # The object key is unique and scoped to the owning user.
+    object_path = (
+        f"users/{user.id}/documents/{uuid4().hex}{extension}"
+    )
+
+    # Upload first. Do not create a DB record if storage upload fails.
+    upload_storage_document(
+        object_path=object_path,
         content=content,
-        original_filename=original_filename,
+        mime_type=mime_type,
     )
 
     document = Document(
         user_id=user.id,
-        original_filename=Path(original_filename).name,
-        storage_path=str(storage_path),
+        original_filename=safe_filename,
+        storage_path=object_path,
         mime_type=mime_type,
         file_size_bytes=len(content),
         status="pending",
@@ -62,10 +84,13 @@ def create_document(
         db.rollback()
 
         try:
-            delete_document(storage_path)
-        except OSError:
+            delete_storage_document(object_path)
+        except Exception:
             # Preserve the original database exception.
-            pass
+            logger.exception(
+                "Failed to clean up Supabase object after DB failure: %s",
+                object_path,
+            )
 
         raise
 
@@ -127,11 +152,9 @@ def delete_user_document(
     document_id: UUID,
 ) -> None:
     """
-    Delete a document's database record and physical file.
+    Delete a document's database record and Supabase object.
 
-    The physical file is removed only after the database transaction
-    succeeds. If file deletion fails, the record is restored where
-    possible so the document can be retried.
+    If Supabase cleanup fails, attempt to restore the database record.
     """
 
     document = get_document_by_id(
@@ -140,7 +163,7 @@ def delete_user_document(
         document_id=document_id,
     )
 
-    storage_path = document.storage_path
+    object_path = document.storage_path
 
     try:
         db.delete(document)
@@ -151,10 +174,10 @@ def delete_user_document(
         raise
 
     try:
-        delete_document(storage_path)
+        delete_storage_document(object_path)
 
     except Exception:
-        # Restore the database record if physical cleanup fails.
+        # Restore the DB record so the user can retry deletion.
         db.rollback()
 
         try:
@@ -162,5 +185,10 @@ def delete_user_document(
             db.commit()
         except Exception:
             db.rollback()
+            logger.exception(
+                "Could not restore document DB record after "
+                "Supabase deletion failure: %s",
+                document_id,
+            )
 
         raise

@@ -8,10 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
-from app.services.document_extraction import (
-    extract_document,
-)
+from app.services.document_extraction import extract_document
 from app.services.embedding_service import embed_texts
+from app.services.supabase_storage import download_document
 from app.services.text_processing import chunk_document_pages
 
 
@@ -29,13 +28,14 @@ def process_document(
     """
     Complete document processing pipeline:
 
-    1. Load document.
+    1. Load document metadata from Neon PostgreSQL.
     2. Mark it as processing.
-    3. Extract text and OCR scanned pages.
-    4. Generate normalized token-aware chunks.
-    5. Generate embeddings.
-    6. Save chunks and embeddings in PostgreSQL.
-    7. Mark document as completed.
+    3. Download document bytes from Supabase Storage.
+    4. Extract text from PDF, DOCX, or TXT.
+    5. Generate normalized token-aware chunks.
+    6. Generate embeddings.
+    7. Save chunks and embeddings in PostgreSQL.
+    8. Mark document as completed.
     """
 
     document = db.get(Document, document_id)
@@ -54,13 +54,18 @@ def process_document(
     try:
         db.commit()
 
-        # Stage 1: Extraction and OCR
+        # Stage 1: Download original file from persistent storage.
+        file_content = download_document(
+            document.storage_path
+        )
+
+        # Stage 2: Extract text directly from downloaded bytes.
         extraction = extract_document(
-            file_path=document.storage_path,
+            file_path=file_content,
             mime_type=document.mime_type,
         )
 
-        # Stage 2 and 3: Cleaning and token-aware chunking
+        # Stage 3: Cleaning and token-aware chunking.
         chunks = chunk_document_pages(extraction.pages)
 
         if not chunks:
@@ -68,7 +73,7 @@ def process_document(
                 "No usable text chunks were generated."
             )
 
-        # Stage 4: Embedding generation
+        # Stage 4: Embedding generation.
         embeddings = embed_texts(
             [chunk.content for chunk in chunks]
         )
@@ -78,7 +83,7 @@ def process_document(
                 "Embedding count does not match chunk count."
             )
 
-        # Replace any previous chunks in the same transaction.
+        # Stage 5: Replace previous chunks in the same transaction.
         db.execute(
             delete(DocumentChunk).where(
                 DocumentChunk.document_id == document.id
@@ -98,7 +103,7 @@ def process_document(
 
         db.add_all(chunk_records)
 
-        # Update document processing information.
+        # Stage 6: Update document processing information.
         document.page_count = extraction.page_count
         document.status = "completed"
         document.processed_at = datetime.now(timezone.utc)
@@ -108,10 +113,9 @@ def process_document(
         db.refresh(document)
 
         logger.info(
-            "Document processed successfully: %s, chunks=%s, OCR pages=%s",
+            "Document processed successfully: %s, chunks=%s",
             document.id,
             len(chunks),
-            extraction.ocr_page_numbers,
         )
 
         return document

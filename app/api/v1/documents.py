@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     HTTPException,
@@ -21,6 +22,7 @@ from app.schemas.document import (
     DocumentListResponse,
     DocumentResponse,
 )
+from app.services.document_background import run_document_processing
 from app.services.document_service import (
     DocumentNotFoundError,
     create_document,
@@ -45,6 +47,7 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
 )
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -53,6 +56,7 @@ async def upload_document(
     Upload a PDF, DOCX, or TXT document.
 
     The authenticated user automatically becomes the document owner.
+    Document processing starts automatically in the background.
     """
 
     content = await validate_document_upload(file)
@@ -63,6 +67,13 @@ async def upload_document(
             user=current_user,
             original_filename=file.filename,
             content=content,
+        )
+
+        # Schedule processing after the document is committed.
+        background_tasks.add_task(
+            run_document_processing,
+            document.id,
+            current_user.id,
         )
 
         return document

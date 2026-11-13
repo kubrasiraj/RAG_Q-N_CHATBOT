@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- Design tokens: Obsidian Emerald (RGB triplets so Tailwind can apply opacity) ---------- */
+:root {
+  --c-app: 8 11 9; /* #080B09 main background */
+  --c-sidebar: 16 25 20; /* #101914 */
+  --c-workspace: 12 17 14; /* #0C110E */
+  --c-card: 20 32 25; /* #142019 */
+  --c-elevated: 25 39 30; /* #19271E */
+  --c-line: 38 57 45; /* #26392D */
+  --c-brand: 22 163 74; /* #16A34A primary emerald */
+  --c-deep: 20 83 45; /* #14532D deep green */
+  --c-mint: 74 222 128; /* #4ADE80 mint accent */
+  --c-ink: 240 253 244; /* #F0FDF4 primary text */
+  --c-soft: 167 184 170; /* #A7B8AA secondary text */
+  --c-muted: 113 130 118; /* #718276 muted text */
+  --c-warn: 214 169 74; /* semantic: attention (pending, insufficient evidence) */
+  --c-danger: 229 112 92; /* semantic: errors, destructive actions */
+  color-scheme: dark;
+}
+
+html, body, #root { height: 100%; }
+body { @apply bg-app font-sans text-ink antialiased; }
+::selection { background: rgb(var(--c-brand) / 0.4); }
+:focus-visible { outline: 2px solid rgb(var(--c-mint)); outline-offset: 2px; }
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--c-line)) transparent; }
+
+@layer components {
+  .ambient {
+    background:
+      radial-gradient(60% 50% at 50% 0%, rgb(var(--c-brand) / 0.14), transparent 70%),
+      radial-gradient(40% 40% at 100% 100%, rgb(var(--c-deep) / 0.25), transparent 70%);
+  }
+  .surface { @apply rounded-2xl border border-line bg-card shadow-card; }
+  .eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted; }
+}
+
+/* ---------- Markdown inside assistant answers ---------- */
+.prose-nova { @apply text-[15px] leading-7 text-ink; overflow-wrap: anywhere; }
+.prose-nova > * + * { @apply mt-3; }
+.prose-nova h1, .prose-nova h2, .prose-nova h3 { @apply font-semibold text-ink; }
+.prose-nova h1 { @apply text-lg; } .prose-nova h2 { @apply text-base; } .prose-nova h3 { @apply text-[15px]; }
+.prose-nova ul { @apply list-disc pl-5; } .prose-nova ol { @apply list-decimal pl-5; }
+.prose-nova li + li { @apply mt-1; }
+.prose-nova li::marker { color: rgb(var(--c-brand)); }
+.prose-nova a { @apply text-brand-mint underline decoration-brand/50 underline-offset-2 hover:decoration-brand-mint; }
+.prose-nova strong { @apply font-semibold; }
+.prose-nova blockquote { @apply border-l-2 border-brand/60 pl-4 text-ink-soft; }
+.prose-nova code { @apply rounded bg-elevated px-1.5 py-0.5 font-mono text-[13px] text-brand-mint; }
+.prose-nova pre { @apply overflow-x-auto rounded-xl border border-line bg-app p-4; }
+.prose-nova pre code { @apply bg-transparent p-0 text-ink; }
+.prose-nova table { @apply w-full border-collapse text-sm; }
+.prose-nova th, .prose-nova td { @apply border border-line px-3 py-2 text-left align-top; }
+.prose-nova th { @apply bg-elevated font-semibold; }
+.prose-nova hr { @apply border-line; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,8 +1,8 @@
 
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from zipfile import BadZipFile
-from app.core.config import settings
 
 import pymupdf
 from docx import Document as WordDocument
@@ -18,6 +18,11 @@ MIME_TYPES = {
         "wordprocessingml.document"
     ),
     ".txt": "text/plain",
+}
+
+MIME_TO_EXTENSION = {
+    mime_type: extension
+    for extension, mime_type in MIME_TYPES.items()
 }
 
 
@@ -52,54 +57,94 @@ class ExtractionResult:
 
 
 def extract_document(
-    file_path: str | Path,
+    file_path: str | Path | bytes,
     mime_type: str,
 ) -> ExtractionResult:
-    """Extract text from a supported document."""
+    """
+    Extract text from a supported document.
 
-    path = Path(file_path)
+    Accepts either:
+    - A local filesystem path (backward compatibility).
+    - Document bytes downloaded from Supabase Storage.
+    """
 
-    if not path.exists() or not path.is_file():
-        raise DocumentExtractionError("Document file does not exist.")
+    if mime_type not in MIME_TO_EXTENSION:
+        raise DocumentExtractionError(
+            "Unsupported document format."
+        )
 
-    expected_mime = MIME_TYPES.get(path.suffix.lower())
+    if isinstance(file_path, bytes):
+        if not file_path:
+            raise DocumentExtractionError(
+                "Document content is empty."
+            )
 
-    if expected_mime is None or expected_mime != mime_type:
+        extension = MIME_TO_EXTENSION[mime_type]
+        source: Path | bytes = file_path
+
+    else:
+        path = Path(file_path)
+
+        if not path.exists() or not path.is_file():
+            raise DocumentExtractionError(
+                "Document file does not exist."
+            )
+
+        extension = path.suffix.lower()
+
+        if MIME_TYPES.get(extension) != mime_type:
+            raise DocumentExtractionError(
+                "Document extension and MIME type do not match."
+            )
+
+        source = path
+
+    if MIME_TYPES.get(extension) != mime_type:
         raise DocumentExtractionError(
             "Document extension and MIME type do not match."
         )
 
     if mime_type == "application/pdf":
-        return _extract_pdf(path)
+        return _extract_pdf(source)
 
     if mime_type == (
         "application/vnd.openxmlformats-officedocument."
         "wordprocessingml.document"
     ):
-        return _extract_docx(path)
+        return _extract_docx(source)
 
     if mime_type == "text/plain":
-        return _extract_txt(path)
+        return _extract_txt(source)
 
-    raise DocumentExtractionError("Unsupported document format.")
+    raise DocumentExtractionError(
+        "Unsupported document format."
+    )
 
 
-
-
-def _extract_pdf(path: Path) -> ExtractionResult:
+def _extract_pdf(source: Path | bytes) -> ExtractionResult:
     """Extract text from a text-based PDF."""
 
     pages = []
 
     try:
-        with pymupdf.open(path) as pdf:
+        if isinstance(source, bytes):
+            pdf = pymupdf.open(
+                stream=source,
+                filetype="pdf",
+            )
+        else:
+            pdf = pymupdf.open(source)
+
+        with pdf:
             if pdf.needs_pass:
                 raise DocumentExtractionError(
                     "Password-protected PDFs are not supported."
                 )
 
             if pdf.page_count == 0:
-                raise DocumentExtractionError("PDF contains no pages.")
+                raise DocumentExtractionError(
+                    "PDF contains no pages."
+                )
 
             page_count = pdf.page_count
 
@@ -139,13 +184,16 @@ def _extract_pdf(path: Path) -> ExtractionResult:
     )
 
 
-def _extract_docx(path: Path) -> ExtractionResult:
+def _extract_docx(source: Path | bytes) -> ExtractionResult:
     """Extract paragraphs and tables from DOCX documents."""
 
     content_blocks = []
 
     try:
-        document = WordDocument(str(path))
+        if isinstance(source, bytes):
+            document = WordDocument(BytesIO(source))
+        else:
+            document = WordDocument(str(source))
 
         # Preserve paragraph and table order.
         for block in document.iter_inner_content():
@@ -201,11 +249,16 @@ def _extract_docx(path: Path) -> ExtractionResult:
     )
 
 
-def _extract_txt(path: Path) -> ExtractionResult:
+def _extract_txt(source: Path | bytes) -> ExtractionResult:
     """Extract UTF-8 text from TXT documents."""
 
     try:
-        content = path.read_text(encoding="utf-8-sig").strip()
+        if isinstance(source, bytes):
+            content = source.decode("utf-8-sig").strip()
+        else:
+            content = source.read_text(
+                encoding="utf-8-sig"
+            ).strip()
 
     except (UnicodeDecodeError, OSError) as exc:
         raise DocumentExtractionError(
