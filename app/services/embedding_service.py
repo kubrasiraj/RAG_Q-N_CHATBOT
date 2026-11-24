@@ -1,7 +1,6 @@
+from sentence_transformers import SentenceTransformer
 
 from functools import lru_cache
-
-from sentence_transformers import SentenceTransformer
 
 from app.core.config import settings
 
@@ -12,12 +11,17 @@ QUERY_INSTRUCTION = (
 
 
 @lru_cache(maxsize=1)
-def get_embedding_model() -> SentenceTransformer:
+def get_embedding_model():
     """
-    Load the embedding model once per application process.
+    Load the embedding model only when it is needed.
+    This avoids loading PyTorch during API startup.
     """
+    from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(settings.embedding_model)
+    return SentenceTransformer(
+        settings.embedding_model,
+        device="cpu",
+    )
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
@@ -45,7 +49,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
 
 def embed_query(query: str) -> list[float]:
-    """Generate a query embedding for semantic retrieval."""
+    """Generate an embedding for semantic search."""
 
     cleaned_query = query.strip()
 
